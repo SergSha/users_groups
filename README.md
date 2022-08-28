@@ -329,7 +329,66 @@ Last login: Sun Aug 28 13:04:39 2022 from 192.168.56.1
 
 <p>Вход под пользователем adminik также разрешен.</p>
 
+<h4>Дать конкретному пользователю права работать с докером и возможность рестартить докер сервис</h4>
 
+<p>В виртуальной машине добавим официальный репозиторий Docker в систему:</p>
+
+<pre>[root@myhost ~]# yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+Loaded plugins: fastestmirror
+adding repo from: https://download.docker.com/linux/centos/docker-ce.repo
+grabbing file https://download.docker.com/linux/centos/docker-ce.repo to /etc/yum.repos.d/docker-ce.repo
+repo saved to /etc/yum.repos.d/docker-ce.repo
+[root@myhost ~]#</pre>
+
+<p>Установим Docker:</p>
+
+<pre>[root@myhost ~]# yum install docker-ce docker-ce-cli containerd.io -y
+...
+Installed:
+  containerd.io.x86_64 0:1.6.8-3.1.el7         docker-ce.x86_64 3:20.10.17-3.el7
+  docker-ce-cli.x86_64 1:20.10.17-3.el7
+
+Dependency Installed:
+  audit-libs-python.x86_64 0:2.8.5-4.el7
+  checkpolicy.x86_64 0:2.5-8.el7
+  container-selinux.noarch 2:2.119.2-1.911c772.el7_8
+  docker-ce-rootless-extras.x86_64 0:20.10.17-3.el7
+  docker-scan-plugin.x86_64 0:0.17.0-3.el7
+  fuse-overlayfs.x86_64 0:0.7.2-6.el7_8
+  fuse3-libs.x86_64 0:3.6.1-4.el7
+  libcgroup.x86_64 0:0.41-21.el7
+  libsemanage-python.x86_64 0:2.5-14.el7
+  policycoreutils-python.x86_64 0:2.5-34.el7
+  python-IPy.noarch 0:0.75-6.el7
+  setools-libs.x86_64 0:3.3.8-4.el7
+  slirp4netns.x86_64 0:0.4.3-4.el7_8
+
+Complete!
+[root@myhost ~]#</pre>
+
+<p>Создадим пользователя dockeruser и добавим его в группу docker:</p>
+
+<pre>[root@myhost ~]# useradd dockeruser -G docker && echo "Otus1234" | passwd --stdin dockeruser
+Changing password for user dockeruser.
+passwd: all authentication tokens updated successfully.
+[root@myhost ~]#</pre>
+
+<p>Смотрим информацию о пользователе dockeruser:</p>
+
+<pre>[root@myhost ~]# id dockeruser
+uid=1003(dockeruser) gid=1004(dockeruser) groups=1004(dockeruser),994(docker)
+[root@myhost ~]#</pre>
+
+<p>Добавим пользователю право на перезапуск docker сервиса:</p>
+
+<pre>cat <<'EOF'>> /etc/polkit-1/rules.d/01-docker.rules
+polkit.addRule(function(action, subject) {
+  if (action.id.match("org.freedesktop.systemd1.manage-units") && action.lookup("unit").match("docker.service") && action.lookup("verb").match("restart") && subject.user.match("dockeruser")) {
+    return polkit.Result.YES;
+  }
+});
+EOF
+[root@myhost ~]#</pre>
 
 
 
