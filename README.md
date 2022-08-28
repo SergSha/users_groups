@@ -383,7 +383,7 @@ uid=1003(dockeruser) gid=1004(dockeruser) groups=1004(dockeruser),994(docker)
 
 <pre>cat <<'EOF'>> /etc/polkit-1/rules.d/01-docker.rules
 polkit.addRule(function(action, subject) {
-  if (action.id.match("org.freedesktop.systemd1.manage-units") && action.lookup("unit").match("docker.service") && action.lookup("verb").match("restart") && subject.user.match("dockeruser")) {
+  if (action.id == "org.freedesktop.systemd1.manage-units" && action.lookup("unit") == "docker.service" && action.lookup("verb") == "restart" && subject.user == "dockeruser") {
     return polkit.Result.YES;
   }
 });
