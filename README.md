@@ -266,13 +266,10 @@ session    include      postlogin
 
 <pre>[root@myhost ~]# cat <<'EOF' >> /usr/local/bin/test_login.sh
 #!/bin/bash
-
-if [ $PAM_USER = "userik" ]; then
-  if [ $(date +%a) = "Sat" ] || [ $(date +%a) = "Sun" ]; then
-    exit 1
-  else
-    exit 0
-  fi
+if [[ -n $(id $PAM_USER | grep -ow admin) || $(date +%u) -le 5 ]]; then
+  exit 0
+else
+  exit 1
 fi
 EOF
 [root@myhost ~]#</pre>
@@ -376,9 +373,34 @@ Complete!
 
 <p>Запустим docker сервис и включим автозапуск:</p>
 
-<pre>[root@myhost ~]# systemctl start docker
-[root@myhost ~]# systemctl enable docker
-Created symlink /etc/systemd/system/multi-user.target.wants/docker.service → /usr/lib/systemd/system/docker.service.
+<pre>[root@myhost ~]# systemctl enable docker --now
+Created symlink from /etc/systemd/system/multi-user.target.wants/docker.service to /usr/lib/systemd/system/docker.service.
+[root@myhost ~]#</pre>
+
+<p>Статус запущенного docker сервиса:</p>
+
+<pre>[root@myhost ~]# systemctl status docker
+● docker.service - Docker Application Container Engine
+   Loaded: loaded (/usr/lib/systemd/system/docker.service; enabled; vendor preset: disabled)
+   Active: active (running) since Mon 2022-08-29 18:09:05 UTC; 20s ago
+     Docs: https://docs.docker.com
+ Main PID: 3508 (dockerd)
+    Tasks: 7
+   Memory: 91.2M
+   CGroup: /system.slice/docker.service
+           └─3508 /usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd....
+
+Aug 29 18:09:05 myhost dockerd[3508]: time="2022-08-29T18:09:05.406140574Z" level=...pc
+Aug 29 18:09:05 myhost dockerd[3508]: time="2022-08-29T18:09:05.406163276Z" level=...pc
+Aug 29 18:09:05 myhost dockerd[3508]: time="2022-08-29T18:09:05.406173904Z" level=...pc
+Aug 29 18:09:05 myhost dockerd[3508]: time="2022-08-29T18:09:05.452947410Z" level=...."
+Aug 29 18:09:05 myhost dockerd[3508]: time="2022-08-29T18:09:05.653892735Z" level=...s"
+Aug 29 18:09:05 myhost dockerd[3508]: time="2022-08-29T18:09:05.766364211Z" level=...."
+Aug 29 18:09:05 myhost dockerd[3508]: time="2022-08-29T18:09:05.840364149Z" level=...17
+Aug 29 18:09:05 myhost dockerd[3508]: time="2022-08-29T18:09:05.845024259Z" level=...n"
+Aug 29 18:09:05 myhost systemd[1]: Started Docker Application Container Engine.
+Aug 29 18:09:05 myhost dockerd[3508]: time="2022-08-29T18:09:05.894331463Z" level=...k"
+Hint: Some lines were ellipsized, use -l to show in full.
 [root@myhost ~]#</pre>
 
 <p>Создадим пользователя dockeruser и добавим его в группу docker:</p>
@@ -406,9 +428,26 @@ EOF
 
 <p>Попробуем перезапустить docker сервис:</p>
 
-<pre></pre>
+<pre>[dockeruser@myhost ~]$ systemctl restart docker
+==== AUTHENTICATING FOR org.freedesktop.systemd1.manage-units ===
+Authentication is required to manage system services or units.
+Authenticating as: root
+Password:</pre>
 
-<p>Добавим пользователю право на перезапуск docker сервиса:</p>
+<p>Смотрим, что у нас в логе /var/log/secure:</p>
+
+<pre>[root@myhost ~]# tail /var/log/secure
+...
+Aug 29 18:20:40 localhost polkit-agent-helper-1[3820]: pam_unix(polkit-1:auth): conversation failed
+Aug 29 18:20:40 localhost polkit-agent-helper-1[3820]: pam_unix(polkit-1:auth): auth could not identify password for [root]
+Aug 29 18:20:40 localhost polkit-agent-helper-1[3820]: pam_succeed_if(polkit-1:auth): requirement "uid >= 1000" not met by user "root"
+Aug 29 18:20:40 localhost polkitd[336]: Unregistered Authentication Agent for unix-process:3810:93589 (system bus name :1.63, object path /org/freedesktop/PolicyKit1/AuthenticationAgent, locale en_US.UTF-8) (disconnected from bus)
+Aug 29 18:20:40 localhost polkitd[336]: Operator of unix-process:3810:93589 FAILED to authenticate to gain authorization for action org.freedesktop.systemd1.manage-units for system-bus-name::1.64 [<unknown>] (owned by unix-user:dockeruser)
+[root@myhost ~]#</pre>
+
+<p>Из последних строк данного лога видно, что пользователю dockeruser НЕ УДАЛОСЬ пройти аутентификацию, чтобы получить разрешение на действие org.freedesktop.systemd1.manage-units.</p>
+
+<p>Добавим пользователю право на перезапуск docker сервиса, создав для этого правило /etc/polkit-1/rules.d/01-docker.rules:</p>
 
 <pre>cat <<'EOF'>> /etc/polkit-1/rules.d/01-docker.rules
 polkit.addRule(function(action, subject) {
@@ -419,6 +458,54 @@ polkit.addRule(function(action, subject) {
 EOF
 [root@myhost ~]#</pre>
 
+<p>Так как в CentOS 7 используется systemd v219:</p>
 
+<pre>[root@myhost ~]# systemctl --version
+systemd 219
++PAM +AUDIT +SELINUX +IMA -APPARMOR +SMACK +SYSVINIT +UTMP +LIBCRYPTSETUP +GCRYPT +GNUTLS +ACL +XZ +LZ4 -SECCOMP +BLKID +ELFUTILS +KMOD +IDN
+[root@myhost ~]#</pre>
 
+<p>что некоторые правила, в частности, action.lookup("unit") и action.lookup("verb") не сработают, нужно обновить systemd до v226. Обновим systemd из репозитория с бэкпортами: </p>
+
+<p>Временно отключим selinux:</p>
+
+<pre>[root@myhost ~]# setenforce 0
+[root@myhost ~]#</pre>
+
+<p>Скачиваем репо:</p>
+
+<pre>[root@myhost ~]# curl https://copr.fedorainfracloud.org/coprs/jsynacek/systemd-backports-for-centos-7/repo/epel-7/jsynacek-systemd-backports-for-centos-7-epel-7.repo -o /etc/yum.repos.d/jsynacek-systemd-centos-7.repo
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   460  100   460    0     0    390      0  0:00:01  0:00:01 --:--:--   391
+[root@myhost ~]#</pre>
+
+<p>Обновляем systemd:</p>
+
+<pre>[root@myhost ~]# yum update systemd -y
+...
+Replaced:
+  systemd.x86_64 0:219-73.el7_8.5
+
+Complete!
+[root@myhost ~]#</pre>
+
+<p>Systemd обновилась до v234:</p>
+
+<pre>[root@myhost ~]# systemctl --version
+systemd 234
++PAM +AUDIT +SELINUX +IMA -APPARMOR +SMACK +SYSVINIT +UTMP +LIBCRYPTSETUP +GCRYPT +GNUTLS +ACL +XZ +LZ4 +SECCOMP +BLKID +ELFUTILS +KMOD -IDN2 +IDN default-hierarchy=hybrid
+[root@myhost ~]#</pre>
+
+<p>Включаем selinux:</p>
+
+<pre>[root@myhost ~]# setenforce 1
+[root@myhost ~]#</pre>
+
+<p>Снова пробуем перезапустить docker сервис под пользователем dockeruser:</p>
+
+<pre>[dockeruser@myhost ~]$ systemctl restart docker
+[dockeruser@myhost ~]$</pre>
+
+<p>Как видим, docker сервис успешно перезапустился под пользователем dockeruser.</p>
 

@@ -26,7 +26,7 @@ Vagrant.configure("2") do |config|
       box.vm.network "private_network", ip: boxconfig[:ip_addr]
 
       box.vm.provider :virtualbox do |vb|
-        vb.customize ["modifyvm", :id, "--memory", "256"]
+        vb.customize ["modifyvm", :id, "--memory", "512"]
       end
           
       box.vm.provision "shell", inline: <<-SHELL
@@ -40,28 +40,29 @@ Vagrant.configure("2") do |config|
         useradd adminik && echo "Otus1234" | passwd --stdin adminik && usermod -aG admin adminik; \
         useradd userik && echo "Otus1234" | passwd --stdin userik
 
+        # --- The First Method ---
         # Add pam rules
         echo '*;*;userik;!Wd0000-2400' >> /etc/security/time.conf
         sed -i '/account    required     pam_nologin.so/a account    required     pam_time.so' /etc/pam.d/sshd
 
-        #sed -i '/account    required     pam_nologin.so/a account    required     pam_exec.so /usr/local/bin/test_login.sh' /etc/pam.d/sshd
-        #cat <<'EOF' >> /usr/local/bin/test_login.sh
-#!/bin/bash
-#if [ $PAM_USER = "userik" ]; then
-#  if [ $(date +%a) = "Sat" ] || [ $(date +%a) = "Sun" ]; then
-#    exit 1
-#  else
-#    exit 0
-#  fi
+        # --- The Second Method ---
+#        sed -i '/account    required     pam_nologin.so/a account    required     pam_exec.so /usr/local/bin/test_login.sh' /etc/pam.d/sshd
+#        cat <<'EOF' >> /usr/local/bin/test_login.sh
+##!/bin/bash
+#if [[ -n $(id $PAM_USER | grep -ow admin) || $(date +%u) -le 5 ]]; then
+#  exit 0
+#else
+#  exit 1
 #fi
 #EOF
-        #chmod +x /usr/local/bin/test_login.sh
+#        chmod +x /usr/local/bin/test_login.sh
 
+        # --- User For Restart Docker Service ---
         # Install and start docker
+        yum install yum-utils -y
         yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
         yum install docker-ce docker-ce-cli containerd.io -y
-        systemctl start docker
-        systemctl enable docker
+        systemctl enable docker --now
         # Create dockeruser and add to docker group
         useradd dockeruser && echo "Otus1234" | passwd --stdin dockeruser && usermod -aG docker dockeruser
         # Add rule for dockeruser for restart docker service
@@ -72,6 +73,11 @@ polkit.addRule(function(action, subject) {
   }
 });
 EOF
+        # Update systemd
+        setenforce 0
+        curl https://copr.fedorainfracloud.org/coprs/jsynacek/systemd-backports-for-centos-7/repo/epel-7/jsynacek-systemd-backports-for-centos-7-epel-7.repo -o /etc/yum.repos.d/jsynacek-systemd-centos-7.repo
+        yum update systemd -y
+        setenforce 1
       SHELL
     end
   end
