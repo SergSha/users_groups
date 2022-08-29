@@ -46,15 +46,15 @@ Vagrant.configure("2") do |config|
 
         #sed -i '/account    required     pam_nologin.so/a account    required     pam_exec.so /usr/local/bin/test_login.sh' /etc/pam.d/sshd
         #cat <<'EOF' >> /usr/local/bin/test_login.sh
-        #!/bin/bash
-        #if [ $PAM_USER = "userik" ]; then
-        #  if [ $(date +%a) = "Sat" ] || [ $(date +%a) = "Sun" ]; then
-        #    exit 1
-        #  else
-        #    exit 0
-        #  fi
-        #fi
-        #EOF
+#!/bin/bash
+#if [ $PAM_USER = "userik" ]; then
+#  if [ $(date +%a) = "Sat" ] || [ $(date +%a) = "Sun" ]; then
+#    exit 1
+#  else
+#    exit 0
+#  fi
+#fi
+#EOF
         #chmod +x /usr/local/bin/test_login.sh
 
         # Install and start docker
@@ -66,12 +66,12 @@ Vagrant.configure("2") do |config|
         useradd dockeruser && echo "Otus1234" | passwd --stdin dockeruser && usermod -aG docker dockeruser
         # Add rule for dockeruser for restart docker service
         cat <<'EOF'>> /etc/polkit-1/rules.d/01-docker.rules
-        polkit.addRule(function(action, subject) {
-          if (action.id == "org.freedesktop.systemd1.manage-units" && action.lookup("unit") == "docker.service" && action.lookup("verb") == "restart" && subject.user == "dockeruser") {
-            return polkit.Result.YES;
-          }
-        });
-        EOF
+polkit.addRule(function(action, subject) {
+  if (action.id == "org.freedesktop.systemd1.manage-units" && action.lookup("unit") == "docker.service" && action.lookup("verb") == "restart" && subject.user == "dockeruser") {
+    return polkit.Result.YES;
+  }
+});
+EOF
       SHELL
     end
   end
