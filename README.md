@@ -333,6 +333,14 @@ Last login: Sun Aug 28 13:04:39 2022 from 192.168.56.1
 
 <p>В виртуальной машине добавим официальный репозиторий Docker в систему:</p>
 
+<pre>[root@myhost ~]# yum install yum-utils -y
+...
+Updated:
+  yum-utils.noarch 0:1.1.31-54.el7_8
+
+Complete!
+[root@myhost ~]#</pre>
+
 <pre>[root@myhost ~]# yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
 Loaded plugins: fastestmirror
 adding repo from: https://download.docker.com/linux/centos/docker-ce.repo
@@ -366,6 +374,13 @@ Dependency Installed:
 Complete!
 [root@myhost ~]#</pre>
 
+<p>Запустим docker сервис и включим автозапуск:</p>
+
+<pre>[root@myhost ~]# systemctl start docker
+[root@myhost ~]# systemctl enable docker
+Created symlink /etc/systemd/system/multi-user.target.wants/docker.service → /usr/lib/systemd/system/docker.service.
+[root@myhost ~]#</pre>
+
 <p>Создадим пользователя dockeruser и добавим его в группу docker:</p>
 
 <pre>[root@myhost ~]# useradd dockeruser -G docker && echo "Otus1234" | passwd --stdin dockeruser
@@ -378,6 +393,20 @@ passwd: all authentication tokens updated successfully.
 <pre>[root@myhost ~]# id dockeruser
 uid=1003(dockeruser) gid=1004(dockeruser) groups=1004(dockeruser),994(docker)
 [root@myhost ~]#</pre>
+
+<p>Включим логирование, а для этого создадим файл /etc/polkit-1/rules.d/00-access.rules со следующим содержимым:</p>
+
+<pre>[root@myhost ~]# cat <<'EOF'>> /etc/polkit-1/rules.d/00-access.rules
+polkit.addRule(function(action, subject) {
+    polkit.log("action=" + action);
+    polkit.log("subject=" + subject);
+});
+EOF
+[root@myhost ~]#</pre>
+
+<p>Попробуем перезапустить docker сервис:</p>
+
+<pre></pre>
 
 <p>Добавим пользователю право на перезапуск docker сервиса:</p>
 
